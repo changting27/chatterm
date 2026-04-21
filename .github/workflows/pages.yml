@@ -1,0 +1,48 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'design/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble static site
+        run: |
+          mkdir -p _site
+          cp -R design/. _site/
+          # Make ChatTerm.html the landing page
+          mv _site/ChatTerm.html _site/index.html
+          # Drop macOS metadata that may have slipped through
+          find _site -name '.DS_Store' -delete
+          ls -la _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
