@@ -5,8 +5,8 @@ use std::io::{BufReader, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::vscreen::VScreen;
 use crate::agent_config;
+use crate::vscreen::VScreen;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PtyOutput {
@@ -85,20 +85,13 @@ impl PtyManager {
         }
 
         // Set HOME and common env
-        let home = std::env::var("HOME").unwrap_or_else(|_|
-            format!("/Users/{}", whoami())
-        );
+        let home = home_dir();
         cmd.env("HOME", &home);
         let work_dir = req.cwd.unwrap_or(&home);
         cmd.cwd(work_dir);
         cmd.env("USER", whoami());
         if let Ok(path) = std::env::var("PATH") {
-            let full_path = if !path.contains("/opt/homebrew/bin") {
-                format!("/opt/homebrew/bin:/usr/local/bin:{path}")
-            } else {
-                path
-            };
-            cmd.env("PATH", full_path);
+            cmd.env("PATH", expand_path(&home, &path));
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("CHATTERM_SESSION_ID", req.id);
@@ -145,14 +138,24 @@ impl PtyManager {
 
                         // Record screen state to file (only when recording is enabled)
                         if crate::RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
-                            let rec_dir = format!("{}/.chatterm/recordings", std::env::var("HOME").unwrap_or_default());
+                            let rec_dir = format!(
+                                "{}/.chatterm/recordings",
+                                std::env::var("HOME").unwrap_or_default()
+                            );
                             std::fs::create_dir_all(&rec_dir).ok();
-                            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                            let ts = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis();
                             use std::io::Write as _;
 
                             // Raw stream log (for analyzing incremental output)
                             let raw_file = format!("{}/{}.raw.log", rec_dir, session_id);
-                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&raw_file) {
+                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&raw_file)
+                            {
                                 writeln!(f, "=== {}ms ({} bytes) ===", ts, data.len()).ok();
                                 writeln!(f, "{}", data).ok();
                             }
@@ -161,7 +164,11 @@ impl PtyManager {
                             let rows = vscreen.rows();
                             if !rows.is_empty() {
                                 let rec_file = format!("{}/{}.log", rec_dir, session_id);
-                                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&rec_file) {
+                                if let Ok(mut f) = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .append(true)
+                                    .open(&rec_file)
+                                {
                                     writeln!(f, "=== {}ms ===", ts).ok();
                                     for (i, row) in rows.iter().enumerate() {
                                         if !row.trim().is_empty() {
@@ -198,14 +205,19 @@ impl PtyManager {
                         }
 
                         // Resolve current agent config
-                        let cur_cfg = agent.as_deref()
+                        let cur_cfg = agent
+                            .as_deref()
                             .and_then(|id| agent_config::agents().iter().find(|a| a.id == id))
                             .or(last_agent_cfg);
 
                         // Check for OSC 777/99 notifications
                         let notification = extract_osc777(&data).or_else(|| extract_osc99(&data));
                         let notif_preview = notification.as_ref().map(|n| {
-                            if n.body.is_empty() { n.title.clone() } else { n.body.clone() }
+                            if n.body.is_empty() {
+                                n.title.clone()
+                            } else {
+                                n.body.clone()
+                            }
                         });
 
                         // Extract preview:
@@ -216,62 +228,103 @@ impl PtyManager {
                         let preview = notif_preview.or_else(|| {
                             // Shell sessions (no agent): only update on newline (user pressed Enter)
                             if cur_cfg.is_none() {
-                                if !data.contains('\n') && !data.contains('\r') { return None; }
+                                if !data.contains('\n') && !data.contains('\r') {
+                                    return None;
+                                }
                                 let mut last_dir = None;
                                 for row in rows.iter().rev() {
                                     let t = row.trim();
-                                    if t.is_empty() { continue; }
+                                    if t.is_empty() {
+                                        continue;
+                                    }
                                     // Extract dir name from prompt "user@host:~/path$" or "user@host:~/path$ cmd"
                                     let extract_dir = |s: &str| -> Option<String> {
                                         let clean = s.trim_end_matches(['$', '%', ' ']);
-                                        clean.rfind(':').map(|i| {
-                                            let path = &clean[i+1..];
-                                            path.split('/').next_back().unwrap_or(path).to_string()
-                                        }).filter(|d| !d.is_empty())
+                                        clean
+                                            .rfind(':')
+                                            .map(|i| {
+                                                let path = &clean[i + 1..];
+                                                path.split('/')
+                                                    .next_back()
+                                                    .unwrap_or(path)
+                                                    .to_string()
+                                            })
+                                            .filter(|d| !d.is_empty())
                                     };
                                     // Prompt with command
                                     if let Some(pos) = t.rfind("$ ").or_else(|| t.rfind("% ")) {
-                                        let cmd_part = t[pos+2..].trim();
+                                        let cmd_part = t[pos + 2..].trim();
                                         if !cmd_part.is_empty() {
-                                            let dir = extract_dir(&t[..pos+1]).unwrap_or_default();
+                                            let dir =
+                                                extract_dir(&t[..pos + 1]).unwrap_or_default();
                                             let result = format!("{}$ {}", dir, cmd_part);
                                             let result = if result.chars().count() > 50 {
-                                                let end = result.char_indices().nth(47).map(|(i,_)|i).unwrap_or(result.len());
+                                                let end = result
+                                                    .char_indices()
+                                                    .nth(47)
+                                                    .map(|(i, _)| i)
+                                                    .unwrap_or(result.len());
                                                 format!("{}…", &result[..end])
-                                            } else { result };
+                                            } else {
+                                                result
+                                            };
                                             last_shell_cmd = Some(result.clone());
                                             return Some(result);
                                         }
-                                        if last_dir.is_none() { last_dir = extract_dir(&t[..pos+1]); }
+                                        if last_dir.is_none() {
+                                            last_dir = extract_dir(&t[..pos + 1]);
+                                        }
                                         continue;
                                     }
                                     if t.ends_with('$') || t.ends_with('%') {
-                                        if last_dir.is_none() { last_dir = extract_dir(t); }
+                                        if last_dir.is_none() {
+                                            last_dir = extract_dir(t);
+                                        }
                                         continue;
                                     }
                                     break;
                                 }
-                                return last_shell_cmd.clone().or_else(|| last_dir.map(|d| format!("{}$", d)));
+                                return last_shell_cmd
+                                    .clone()
+                                    .or_else(|| last_dir.map(|d| format!("{}$", d)));
                             }
-                            if !verbose { return None; }
+                            if !verbose {
+                                return None;
+                            }
                             // Verbose fallback: scan vscreen
                             if let Some(cfg) = cur_cfg {
                                 let mut past_input_zone = !cfg.has_input_zone();
                                 for row in rows.iter().rev() {
                                     let t = row.trim();
-                                    if t.is_empty() || t.len() < 2 { continue; }
-                                    if !past_input_zone {
-                                        if cfg.is_input_zone_boundary(t) { past_input_zone = true; }
+                                    if t.is_empty() || t.len() < 2 {
                                         continue;
                                     }
-                                    if t.chars().filter(|c| c.is_alphanumeric()).count() < 2 { continue; }
-                                    if cfg.is_chrome(t) { continue; }
+                                    if !past_input_zone {
+                                        if cfg.is_input_zone_boundary(t) {
+                                            past_input_zone = true;
+                                        }
+                                        continue;
+                                    }
+                                    if t.chars().filter(|c| c.is_alphanumeric()).count() < 2 {
+                                        continue;
+                                    }
+                                    if cfg.is_chrome(t) {
+                                        continue;
+                                    }
                                     let cleaned = cfg.strip_reply_prefix(t);
-                                    if cleaned.is_empty() { continue; }
+                                    if cleaned.is_empty() {
+                                        continue;
+                                    }
                                     let result = if cleaned.chars().count() > 60 {
-                                        let end = cleaned.char_indices().nth(57).map(|(i,_)|i).unwrap_or(cleaned.len());
+                                        let end = cleaned
+                                            .char_indices()
+                                            .nth(57)
+                                            .map(|(i, _)| i)
+                                            .unwrap_or(cleaned.len());
                                         format!("{}…", &cleaned[..end])
-                                    } else { cleaned.to_string() };
+                                    } else {
+                                        cleaned.to_string()
+                                    };
                                     return Some(result);
                                 }
                             }
@@ -279,7 +332,9 @@ impl PtyManager {
                         });
 
                         let preview_changed = preview.is_some() && preview != last_preview;
-                        if preview_changed { last_preview = preview.clone(); }
+                        if preview_changed {
+                            last_preview = preview.clone();
+                        }
 
                         // Detect state: screen detection takes priority (more real-time than OSC title)
                         if let Some(cfg) = cur_cfg {
@@ -289,14 +344,22 @@ impl PtyManager {
                         }
 
                         // Emit metadata
-                        let agent_changed = agent.is_some() && agent.as_deref() != last_agent_cfg.map(|c| c.id.as_str());
+                        let agent_changed = agent.is_some()
+                            && agent.as_deref() != last_agent_cfg.map(|c| c.id.as_str());
                         let state_changed = state.is_some() && state != last_state;
-                        if agent_changed || state_changed || preview_changed || notification.is_some() {
+                        if agent_changed
+                            || state_changed
+                            || preview_changed
+                            || notification.is_some()
+                        {
                             if agent_changed {
-                                last_agent_cfg = agent.as_deref()
-                                    .and_then(|id| agent_config::agents().iter().find(|a| a.id == id));
+                                last_agent_cfg = agent.as_deref().and_then(|id| {
+                                    agent_config::agents().iter().find(|a| a.id == id)
+                                });
                             }
-                            if state_changed { last_state = state.clone(); }
+                            if state_changed {
+                                last_state = state.clone();
+                            }
                             on_meta(PtyMeta {
                                 session_id: session_id.clone(),
                                 title,
@@ -304,8 +367,16 @@ impl PtyManager {
                                 state: if state_changed { state } else { None },
                                 preview: if preview_changed { preview } else { None },
                                 notification: notification.clone(),
-                                command: if agent_changed { detect_agent_command(agent.as_deref()) } else { None },
-                                cwd: if agent_changed { detect_agent_cwd(agent.as_deref()) } else { None },
+                                command: if agent_changed {
+                                    detect_agent_command(agent.as_deref())
+                                } else {
+                                    None
+                                },
+                                cwd: if agent_changed {
+                                    detect_agent_cwd(agent.as_deref())
+                                } else {
+                                    None
+                                },
                             });
                         }
 
@@ -352,8 +423,12 @@ impl PtyManager {
     pub fn kill_session(&self, id: &str) -> Result<(), String> {
         let mut sessions = self.sessions.lock().unwrap();
         if let Some(mut session) = sessions.remove(id) {
-            if let Some(ref mut c) = session._child { c.kill().ok(); }
-            if let Some(ref mut p) = session._process { p.kill().ok(); }
+            if let Some(ref mut c) = session._child {
+                c.kill().ok();
+            }
+            if let Some(ref mut p) = session._process {
+                p.kill().ok();
+            }
         }
         Ok(())
     }
@@ -362,11 +437,23 @@ impl PtyManager {
         let sessions = self.sessions.lock().unwrap();
         let session = sessions.get(id).ok_or("Session not found")?;
         if let Some(ref master) = session.master_pty {
-            master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .map_err(|e| format!("Resize failed: {e}"))
         } else {
             Ok(()) // claude process sessions don't have a PTY master
         }
+    }
+}
+
+impl Default for PtyManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -421,7 +508,8 @@ fn detect_agent_command(agent: Option<&str>) -> Option<String> {
     };
     let output = std::process::Command::new("ps")
         .args(["-eo", "args"])
-        .output().ok()?;
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
         let trimmed = line.trim();
@@ -432,22 +520,36 @@ fn detect_agent_command(agent: Option<&str>) -> Option<String> {
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             let mut start = 0;
             // Skip "node" prefix
-            if parts.first().map(|p| p.ends_with("node") || p.ends_with("node3")).unwrap_or(false) {
+            if parts
+                .first()
+                .map(|p| p.ends_with("node") || p.ends_with("node3"))
+                .unwrap_or(false)
+            {
                 start = 1;
             }
             // Replace full path with just binary name
             if let Some(cmd_part) = parts.get(start) {
                 let cmd_base = cmd_part.split('/').next_back().unwrap_or(cmd_part);
-                let _args: Vec<&str> = parts[start+1..].iter()
+                let _args: Vec<&str> = parts[start + 1..]
+                    .iter()
                     .filter(|a| !a.starts_with("--session-id") && !a.starts_with("--settings"))
-                    .copied().collect();
+                    .copied()
+                    .collect();
                 // Also filter out the value after --session-id
                 let mut clean_args = Vec::new();
                 let mut skip_next = false;
-                for a in &parts[start+1..] {
-                    if skip_next { skip_next = false; continue; }
-                    if *a == "--session-id" || *a == "--settings" { skip_next = true; continue; }
-                    if a.starts_with("--session-id=") || a.starts_with("--settings=") { continue; }
+                for a in &parts[start + 1..] {
+                    if skip_next {
+                        skip_next = false;
+                        continue;
+                    }
+                    if *a == "--session-id" || *a == "--settings" {
+                        skip_next = true;
+                        continue;
+                    }
+                    if a.starts_with("--session-id=") || a.starts_with("--settings=") {
+                        continue;
+                    }
                     clean_args.push(*a);
                 }
                 let result = if clean_args.is_empty() {
@@ -472,25 +574,44 @@ fn detect_agent_cwd(agent: Option<&str>) -> Option<String> {
     };
     let output = std::process::Command::new("ps")
         .args(["-eo", "pid,args"])
-        .output().ok()?;
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
         let trimmed = line.trim();
         let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
-        if parts.len() < 2 { continue; }
+        if parts.len() < 2 {
+            continue;
+        }
         let base = parts[1].split('/').next_back().unwrap_or(parts[1]);
         if base.starts_with(bin) && !parts[1].contains("hook") {
             let pid = parts[0].trim();
-            // lsof -a -p PID -d cwd: -a means AND all conditions
-            let lsof = std::process::Command::new("lsof")
-                .args(["-a", "-p", pid, "-d", "cwd", "-Fn"])
-                .output().ok()?;
-            let lsof_out = String::from_utf8_lossy(&lsof.stdout);
-            for l in lsof_out.lines() {
-                if l.starts_with('n') && l.len() > 2 && !l.starts_with("n/\n") {
-                    return Some(l[1..].to_string());
-                }
+            if let Some(cwd) = process_cwd(pid) {
+                return Some(cwd);
             }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn process_cwd(pid: &str) -> Option<String> {
+    std::fs::read_link(format!("/proc/{pid}/cwd"))
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_cwd(pid: &str) -> Option<String> {
+    // lsof -a -p PID -d cwd: -a means AND all conditions.
+    let lsof = std::process::Command::new("lsof")
+        .args(["-a", "-p", pid, "-d", "cwd", "-Fn"])
+        .output()
+        .ok()?;
+    let lsof_out = String::from_utf8_lossy(&lsof.stdout);
+    for l in lsof_out.lines() {
+        if l.starts_with('n') && l.len() > 2 {
+            return Some(l[1..].to_string());
         }
     }
     None
@@ -501,7 +622,11 @@ fn extract_osc_title(data: &str) -> Option<String> {
     let bytes = data.as_bytes();
     let mut i = 0;
     while i + 3 < bytes.len() {
-        if bytes[i] == 0x1b && bytes[i + 1] == b']' && (bytes[i + 2] == b'0' || bytes[i + 2] == b'2') && bytes[i + 3] == b';' {
+        if bytes[i] == 0x1b
+            && bytes[i + 1] == b']'
+            && (bytes[i + 2] == b'0' || bytes[i + 2] == b'2')
+            && bytes[i + 3] == b';'
+        {
             let start = i + 4;
             if let Some(end) = bytes[start..].iter().position(|&b| b == 0x07) {
                 return Some(String::from_utf8_lossy(&bytes[start..start + end]).to_string());
@@ -512,37 +637,85 @@ fn extract_osc_title(data: &str) -> Option<String> {
     None
 }
 
-
-
-
-
-
-/// Detect user's default shell: $SHELL → dscl → /bin/bash
+/// Detect user's default shell: $SHELL → platform fallback → /bin/bash
 fn detect_shell() -> String {
     if let Ok(s) = std::env::var("SHELL") {
-        if !s.is_empty() { return s; }
-    }
-    // macOS: query Directory Services for the user's configured shell
-    if let Ok(out) = std::process::Command::new("dscl")
-        .args([".", "-read", &format!("/Users/{}", whoami()), "UserShell"])
-        .output()
-    {
-        let s = String::from_utf8_lossy(&out.stdout);
-        if let Some(shell) = s.split_whitespace().next_back() {
-            if std::path::Path::new(shell).exists() { return shell.to_string(); }
+        if !s.is_empty() {
+            return s;
         }
+    }
+    if let Some(shell) = platform_shell() {
+        return shell;
     }
     "/bin/bash".to_string()
 }
 
-fn whoami() -> String {
-    std::env::var("USER").unwrap_or_else(|_|
-        String::from_utf8_lossy(
-            &std::process::Command::new("whoami").output().map(|o| o.stdout).unwrap_or_default()
-        ).trim().to_string()
-    )
+#[cfg(target_os = "macos")]
+fn platform_shell() -> Option<String> {
+    let out = std::process::Command::new("dscl")
+        .args([".", "-read", &format!("/Users/{}", whoami()), "UserShell"])
+        .output()
+        .ok()?;
+    let s = String::from_utf8_lossy(&out.stdout);
+    let shell = s.split_whitespace().next_back()?;
+    std::path::Path::new(shell)
+        .exists()
+        .then(|| shell.to_string())
 }
 
+#[cfg(not(target_os = "macos"))]
+fn platform_shell() -> Option<String> {
+    None
+}
+
+fn whoami() -> String {
+    std::env::var("USER").unwrap_or_else(|_| {
+        String::from_utf8_lossy(
+            &std::process::Command::new("whoami")
+                .output()
+                .map(|o| o.stdout)
+                .unwrap_or_default(),
+        )
+        .trim()
+        .to_string()
+    })
+}
+
+fn home_dir() -> String {
+    std::env::var("HOME").unwrap_or_else(|_| {
+        #[cfg(target_os = "macos")]
+        {
+            format!("/Users/{}", whoami())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            format!("/home/{}", whoami())
+        }
+    })
+}
+
+fn expand_path(_home: &str, path: &str) -> String {
+    let mut prefixes = Vec::new();
+    #[cfg(target_os = "macos")]
+    {
+        prefixes.push("/opt/homebrew/bin".to_string());
+        prefixes.push("/usr/local/bin".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        prefixes.push(format!("{_home}/.local/bin"));
+        prefixes.push("/usr/local/bin".to_string());
+    }
+
+    let mut merged = Vec::new();
+    for prefix in prefixes {
+        if !path.split(':').any(|entry| entry == prefix) {
+            merged.push(prefix);
+        }
+    }
+    merged.push(path.to_string());
+    merged.join(":")
+}
 
 // Wrapper to implement portable_pty::Child for std::process::Child
 // end of module

@@ -35,7 +35,7 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 - **Agent auto-detection** — Recognizes Claude Code, Kiro CLI, Codex; updates avatar and status
 - **Real-time status** — Thinking/idle detection via vscreen pattern matching
 - **Hook-driven previews** — Agent reply previews via Named Pipe (FIFO) IPC, no screen scraping
-- **Theme system** — Import themes from macOS Terminal, built-in ChatTerm / VS Code Dark / Dark+
+- **Theme system** — Built-in ChatTerm / VS Code Dark / Dark+ themes; macOS can import Terminal profiles
 - **Session persistence** — Restores session list on restart; agents resume with `--resume`
 - **⌘K search** — Quick session search by name, cwd, or output
 - **Shell preview** — Shows last command and working directory for shell sessions
@@ -45,11 +45,11 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 - **Frontend**: React 19 + TypeScript + Vite 7 + xterm.js
 - **Backend**: Rust + Tauri 2 + portable-pty
 - **IPC**: Named Pipe (FIFO) for hook → app communication
-- **Theme**: Configurable, imports macOS Terminal `.terminal` profiles
+- **Theme**: Configurable themes; macOS-only import from Terminal `.terminal` profiles
 
 ## Install
 
-### One-line install (recommended)
+### macOS one-line install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
@@ -67,11 +67,30 @@ xattr -cr ~/Downloads/ChatTerm_*.dmg
 
 Then open the DMG and drag ChatTerm to `/Applications`.
 
+### Ubuntu / Linux packages
+
+Linux release builds publish `.deb` and `.AppImage` artifacts. On Ubuntu, prefer the `.deb` from [Releases](https://github.com/chatterm/chatterm/releases):
+
+```bash
+sudo dpkg -i ./chatterm_*.deb
+sudo apt-get install -f
+```
+
 ## Development
 
 ```bash
 npm install
 npm run tauri dev
+```
+
+### Ubuntu development dependencies
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential curl file wget \
+  libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+  libayatana-appindicator3-dev librsvg2-dev
 ```
 
 ## Build from source
@@ -81,22 +100,29 @@ npm run tauri build
 bash install.sh
 ```
 
+On Ubuntu/Linux:
+
+```bash
+npm run tauri -- build --bundles deb,appimage
+bash scripts/install-linux.sh
+```
+
 ## Setup Agent Hooks
 
 The hook installer writes `~/.chatterm/hook.sh` and wires it into each agent's config. Pick whichever entry point matches your install:
 
 ```bash
-# Installed via DMG / curl
+# Installed via DMG / curl on macOS
 bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
 
-# Installed via one-line curl (also works)
+# Cross-platform remote setup
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 
 # Running from a repo checkout
 bash scripts/setup-hooks.sh
 ```
 
-All three entry points produce the same result: the hook lives at `~/.chatterm/hook.sh`, and the following configs reference that stable path:
+All entry points produce the same result: the hook lives at `~/.chatterm/hook.sh`, and the following configs reference that stable path:
 
 | Agent | Config file | Activation |
 |---|---|---|
@@ -122,8 +148,9 @@ To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settin
 
 | Key | Action |
 |-----|--------|
-| ⌘K | Search sessions |
-| ⌘N | New session |
+| ⌘K / Ctrl+K | Search sessions |
+| ⌘N / Ctrl+N | New session |
+| F11 | Toggle fullscreen |
 | Esc | Close overlays |
 
 ## Architecture
@@ -134,7 +161,7 @@ src/                        # Frontend (React + TypeScript)
 ├── XtermPane.tsx           # xterm.js terminal rendering
 ├── Sidebar.tsx             # Session list with status indicators
 ├── CmdK.tsx                # ⌘K search overlay
-├── themes.ts               # Theme system (import macOS Terminal themes)
+├── themes.ts               # Theme system
 ├── types.ts                # Shared types
 └── Icons.tsx               # SVG icons
 
@@ -143,12 +170,13 @@ src-tauri/src/              # Backend (Rust)
 ├── pty.rs                  # PTY manager, agent detection, vscreen
 ├── vscreen.rs              # Virtual screen for state detection
 ├── agent_config.rs         # Config-driven agent matching (agents.json)
-├── theme.rs                # macOS Terminal theme parser
+├── theme.rs                # Theme parser; macOS Terminal import when available
 ├── session.rs              # Session metadata persistence
 └── main.rs                 # Entry point
 
 scripts/                    # Install + hook scripts
-├── install-remote.sh       # One-line curl installer
+├── install-remote.sh       # macOS release installer
+├── install-linux.sh        # Linux local bundle installer
 └── setup-hooks.sh          # Agent hook installer (writes ~/.chatterm/hook.sh)
 
 design/                     # Design assets
@@ -162,7 +190,7 @@ design/                     # Design assets
 - [x] PTY terminal with xterm.js
 - [x] Agent auto-detection (Claude, Kiro, Codex)
 - [x] Hook-driven preview via FIFO IPC
-- [x] Theme system with macOS Terminal import
+- [x] Theme system with macOS Terminal import on macOS
 - [x] Session persistence and agent resume
 - [x] ⌘K search, pin, rename, close
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { Session, SessionAvatar, SessionStatus, statusColor, relTime, truncate } from "./types";
+import { Session, SessionAvatar, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
 import { Ic } from "./Icons";
 
 export function Avatar({ av, size = 36, status, group }: { av: SessionAvatar; size?: number; status?: SessionStatus; group?: boolean }) {
@@ -183,7 +183,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
               }}>{totalUnread}</div>
             )}
           </div>
-          <button onClick={onNew} title="New session (⌘N)" style={{
+          <button onClick={onNew} title={`New session (${MOD_KEY}N)`} style={{
             background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", padding: 4, borderRadius: 4, display: "flex",
           }}
             onMouseEnter={e => { e.currentTarget.style.background = "var(--sidebar-hover)"; e.currentTarget.style.color = "var(--text)"; }}
@@ -199,7 +199,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
         }}>
           <Ic.search />
           <span style={{ flex: 1 }}>Search sessions</span>
-          <span style={{ fontSize: 11, padding: "1px 5px", background: "#2d2d30", borderRadius: 3, fontFamily: "-apple-system, sans-serif" }}>⌘K</span>
+          <span style={{ fontSize: 11, padding: "1px 5px", background: "#2d2d30", borderRadius: 3, fontFamily: "-apple-system, sans-serif" }}>{MOD_KEY}K</span>
         </button>
 
         {/* Filter pills */}

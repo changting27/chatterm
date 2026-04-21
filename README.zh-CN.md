@@ -35,7 +35,7 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 - **Agent 自动识别** — 识别 Claude Code、Kiro CLI、Codex，自动更新头像和状态
 - **实时状态检测** — 通过 vscreen 模式匹配检测 thinking/idle 状态
 - **Hook 驱动预览** — 通过 Named Pipe (FIFO) IPC 获取 Agent 回复预览，无需屏幕刮取
-- **主题系统** — 导入 macOS Terminal 主题，内置 ChatTerm / VS Code Dark / Dark+
+- **主题系统** — 内置 ChatTerm / VS Code Dark / Dark+，macOS 可导入 Terminal 主题
 - **会话持久化** — 重启后恢复会话列表，Agent 会话支持 `--resume` 恢复
 - **⌘K 搜索** — 按名称、工作目录或输出快速搜索会话
 - **Shell 预览** — 显示 Shell 会话的最后命令和工作目录
@@ -45,11 +45,11 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 - **前端**: React 19 + TypeScript + Vite 7 + xterm.js
 - **后端**: Rust + Tauri 2 + portable-pty
 - **IPC**: Named Pipe (FIFO) 用于 hook → 应用通信
-- **主题**: 可配置，支持导入 macOS Terminal `.terminal` 配置
+- **主题**: 可配置主题；macOS 支持导入 Terminal `.terminal` 配置
 
 ## 安装
 
-### 一键安装（推荐）
+### macOS 一键安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
@@ -67,11 +67,30 @@ xattr -cr ~/Downloads/ChatTerm_*.dmg
 
 然后挂载并把 ChatTerm 拖到 `/Applications`。
 
+### Ubuntu / Linux 包
+
+Linux release 会发布 `.deb` 和 `.AppImage`。Ubuntu 上优先使用 [Releases](https://github.com/chatterm/chatterm/releases) 里的 `.deb`：
+
+```bash
+sudo dpkg -i ./chatterm_*.deb
+sudo apt-get install -f
+```
+
 ## 开发
 
 ```bash
 npm install
 npm run tauri dev
+```
+
+### Ubuntu 开发依赖
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential curl file wget \
+  libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+  libayatana-appindicator3-dev librsvg2-dev
 ```
 
 ## 从源码构建
@@ -81,22 +100,29 @@ npm run tauri build
 bash install.sh
 ```
 
+Ubuntu/Linux：
+
+```bash
+npm run tauri -- build --bundles deb,appimage
+bash scripts/install-linux.sh
+```
+
 ## 配置 Agent Hooks
 
 脚本会把 hook 写到 `~/.chatterm/hook.sh`，并修改各 agent 的配置指向它。三种入口，选一个：
 
 ```bash
-# 通过 DMG / curl 安装后
+# 通过 DMG / curl 在 macOS 安装后
 bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
 
-# 一键远程安装（同样可用）
+# 跨平台远程配置
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 
 # 从仓库直接跑
 bash scripts/setup-hooks.sh
 ```
 
-三条路径效果一致：hook 统一落在 `~/.chatterm/hook.sh`，下列配置都引用它：
+这些入口效果一致：hook 统一落在 `~/.chatterm/hook.sh`，下列配置都引用它：
 
 | Agent | 配置文件 | 生效方式 |
 |---|---|---|
@@ -122,8 +148,9 @@ kiro-cli chat --agent chatterm
 
 | 按键 | 操作 |
 |------|------|
-| ⌘K | 搜索会话 |
-| ⌘N | 新建会话 |
+| ⌘K / Ctrl+K | 搜索会话 |
+| ⌘N / Ctrl+N | 新建会话 |
+| F11 | 切换全屏 |
 | Esc | 关闭弹窗 |
 
 ## 项目结构
@@ -134,7 +161,7 @@ src/                        # 前端 (React + TypeScript)
 ├── XtermPane.tsx           # xterm.js 终端渲染
 ├── Sidebar.tsx             # 会话列表与状态指示器
 ├── CmdK.tsx                # ⌘K 搜索弹窗
-├── themes.ts               # 主题系统（导入 macOS Terminal 主题）
+├── themes.ts               # 主题系统
 ├── types.ts                # 共享类型
 └── Icons.tsx               # SVG 图标
 
@@ -143,12 +170,13 @@ src-tauri/src/              # 后端 (Rust)
 ├── pty.rs                  # PTY 管理器，Agent 检测，vscreen
 ├── vscreen.rs              # 虚拟屏幕，用于状态检测
 ├── agent_config.rs         # 配置驱动的 Agent 匹配 (agents.json)
-├── theme.rs                # macOS Terminal 主题解析器
+├── theme.rs                # 主题解析器；macOS 可导入 Terminal 主题
 ├── session.rs              # 会话元数据持久化
 └── main.rs                 # 入口
 
 scripts/                    # 安装 + hook 脚本
-├── install-remote.sh       # 一键 curl 远程安装
+├── install-remote.sh       # macOS release 安装器
+├── install-linux.sh        # Linux 本地 bundle 安装器
 └── setup-hooks.sh          # Agent hook 安装器（写入 ~/.chatterm/hook.sh）
 
 design/                     # 设计资源
@@ -162,7 +190,7 @@ design/                     # 设计资源
 - [x] PTY 终端 + xterm.js
 - [x] Agent 自动识别（Claude、Kiro、Codex）
 - [x] Hook 驱动的 FIFO IPC 预览
-- [x] 主题系统 + macOS Terminal 导入
+- [x] 主题系统 + macOS Terminal 导入（macOS）
 - [x] 会话持久化 + Agent 恢复
 - [x] ⌘K 搜索、置顶、重命名、关闭
 

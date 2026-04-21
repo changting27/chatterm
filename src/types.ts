@@ -46,6 +46,12 @@ export interface Session {
 
 export interface PtyOutput { session_id: string; data: string; }
 
+// Platform-aware modifier-key display: ⌘ on macOS, Ctrl+ elsewhere.
+// Key handler already accepts metaKey || ctrlKey — only the label changes.
+export const IS_MAC = typeof navigator !== "undefined"
+  && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+export const MOD_KEY = IS_MAC ? "⌘" : "Ctrl+";
+
 export const AVATAR_COLORS = [
   "var(--av-1)", "var(--av-2)", "var(--av-3)", "var(--av-4)",
   "var(--av-5)", "var(--av-6)", "var(--av-7)", "var(--av-8)",

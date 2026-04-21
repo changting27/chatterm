@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Sidebar from "./Sidebar";
 import XtermPane from "./XtermPane";
 import CmdK from "./CmdK";
+import { Ic } from "./Icons";
 import { Session, PtyOutput, AVATAR_COLORS } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
 import "./App.css";
@@ -229,9 +231,19 @@ export default function App() {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, unread: 0 } : s));
   };
 
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      const win = getCurrentWindow();
+      await win.setFullscreen(!(await win.isFullscreen()));
+    } catch (e) {
+      console.error("Failed to toggle fullscreen", e);
+    }
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === "F11") { e.preventDefault(); toggleFullscreen(); return; }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdkOpen(true); }
       if ((e.metaKey || e.ctrlKey) && e.key === "n") { e.preventDefault(); handleNew(); }
       if (e.key === "Escape") {
@@ -242,7 +254,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler, true); // capture phase
     return () => window.removeEventListener("keydown", handler, true);
-  }, [cmdkOpen, themeOpen, sessions.length]);
+  }, [cmdkOpen, themeOpen, sessions.length, toggleFullscreen]);
 
   const active = sessions.find(s => s.id === activeId);
 
@@ -283,6 +295,20 @@ export default function App() {
             <div style={{ fontSize: 13, fontWeight: 400, color: "var(--text-strong)" }}>{active.name}</div>
             <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{active.kind}</span>
             <div style={{ flex: 1 }} />
+            <button
+              onClick={toggleFullscreen}
+              title="Toggle fullscreen (F11)"
+              style={{
+                width: 28, height: 28, flex: "0 0 28px",
+                background: "transparent", border: "none", color: "var(--text-dim)",
+                cursor: "pointer", padding: 0, borderRadius: 4,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--sidebar-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-dim)"; }}
+            >
+              <Ic.fullscreen />
+            </button>
             {/* Record button hidden
             <button
               onClick={async () => {
