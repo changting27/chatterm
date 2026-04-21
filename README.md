@@ -13,6 +13,10 @@
   <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
 </p>
 
+<p align="center">
+  <img src="design/chatterm-preview.png" alt="ChatTerm Screenshot">
+</p>
+
 ## Why ChatTerm?
 
 Running multiple AI coding agents (Claude Code, Kiro CLI, Codex), SSH sessions, builds, and logs in parallel is painful with traditional terminals:

@@ -13,6 +13,10 @@
   <a href="README.md">English</a> | <a href="README.zh-CN.md">中文</a>
 </p>
 
+<p align="center">
+  <img src="design/chatterm-preview.png" alt="ChatTerm 截图">
+</p>
+
 ## 为什么需要 ChatTerm？
 
 同时运行多个 AI 编程 Agent（Claude Code、Kiro CLI、Codex）、SSH、构建、日志，传统终端的痛点：
