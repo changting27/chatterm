@@ -150,6 +150,7 @@ To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settin
 |-----|--------|
 | ⌘K | Search sessions |
 | ⌘N | New session |
+| F11 | Toggle fullscreen |
 | Esc | Close overlays |
 
 ## Architecture
