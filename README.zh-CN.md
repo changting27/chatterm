@@ -163,8 +163,8 @@ kiro-cli chat --agent chatterm
 
 | 按键 | 操作 |
 |------|------|
-| ⌘K / Ctrl+K | 搜索会话 |
-| ⌘N / Ctrl+N | 新建会话 |
+| ⌘K (macOS) / Ctrl+Shift+K (Linux) | 搜索会话 |
+| ⌘N (macOS) / Ctrl+Shift+N (Linux) | 新建会话 |
 | F11 | 切换全屏 |
 | Esc | 关闭弹窗 |
 

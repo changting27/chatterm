@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
-import { PtyOutput } from "./types";
+import { PtyOutput, isMenuMod } from "./types";
 import { getCurrentTheme, toXtermTheme } from "./themes";
 
 // Global cache: one Terminal instance per session, survives re-renders
@@ -26,9 +26,14 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
   const fit = new FitAddon();
   term.loadAddon(fit);
 
-  // Let Cmd+K/N pass through to app, block xterm input when overlays are open
+  // Let the app's menu shortcuts (Cmd+X on macOS, Ctrl+Shift+X on Linux) pass
+  // through to the global keydown handler. Bare Ctrl on Linux stays in xterm so
+  // bash readline and vim keep working; also block xterm input while overlays are open.
   term.attachCustomKeyEventHandler((e) => {
-    if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "n")) return false;
+    if (isMenuMod(e)) {
+      const k = e.key.toLowerCase();
+      if (k === "k" || k === "n") return false;
+    }
     if (document.querySelector(".cmdk-backdrop")) return false;
     return true;
   });

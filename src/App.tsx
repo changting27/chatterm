@@ -6,7 +6,7 @@ import Sidebar from "./Sidebar";
 import XtermPane from "./XtermPane";
 import CmdK from "./CmdK";
 import { Ic } from "./Icons";
-import { Session, PtyOutput, AVATAR_COLORS } from "./types";
+import { Session, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
 import "./App.css";
 
@@ -244,8 +244,14 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "F11") { e.preventDefault(); toggleFullscreen(); return; }
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdkOpen(true); }
-      if ((e.metaKey || e.ctrlKey) && e.key === "n") { e.preventDefault(); handleNew(); }
+      // Menu shortcuts: Cmd+X on macOS, Ctrl+Shift+X on Linux. Using plain Ctrl
+      // on Linux would steal bash readline (Ctrl+K kill-line, Ctrl+N next-history)
+      // and vim (Ctrl+K digraph, Ctrl+N autocomplete) inside shell sessions.
+      if (isMenuMod(e)) {
+        const k = e.key.toLowerCase();
+        if (k === "k") { e.preventDefault(); setCmdkOpen(true); }
+        if (k === "n") { e.preventDefault(); handleNew(); }
+      }
       if (e.key === "Escape") {
         e.preventDefault(); e.stopPropagation();
         if (themeOpen) { setThemeOpen(false); return; }
