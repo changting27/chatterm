@@ -220,14 +220,28 @@ mod tests {
         let agents = agents();
         let claude = agents.iter().find(|a| a.id == "claude").unwrap();
         // Asking must win even when other rows would trigger thinking/idle.
-        let rows = vec![
+        // Anchor is the `❯ 1. Yes` row — real dialog has it; AI reply text
+        // that merely mentions "Do you want to proceed?" does not.
+        let dialog = vec![
             "✶ Crafting…".to_string(),
             "Do you want to proceed?".to_string(),
             "❯ 1. Yes".to_string(),
         ];
-        assert_eq!(claude.detect_state_from_screen(&rows), Some("asking"));
-        assert_eq!(claude.detect_state_from_screen(&["Do you want to make this edit to foo.py".to_string()]), Some("asking"));
-        assert_eq!(claude.detect_state_from_screen(&["What should Claude do instead?".to_string()]), Some("asking"));
+        assert_eq!(claude.detect_state_from_screen(&dialog), Some("asking"));
+        // Footer-only row also triggers (e.g., when the question has scrolled
+        // off the top of the viewport but the option block is still visible).
+        assert_eq!(claude.detect_state_from_screen(&["Esc to cancel · Tab to amend · ctrl+e to explain".to_string()]), Some("asking"));
+        // Deny / interrupt chrome — `⏺` prefix is the structural anchor.
+        assert_eq!(claude.detect_state_from_screen(&["⏺ Interrupted · What should Claude do instead?".to_string()]), Some("asking"));
+
+        // False-positive regression guard: prose that merely mentions the
+        // dialog phrases must NOT flip state to asking.
+        let prose = vec![
+            "Me: If Claude asks \"Do you want to proceed?\" in a reply,".to_string(),
+            "the state detector should not confuse it with a real dialog.".to_string(),
+            "This is regression protection for self-referential chat.".to_string(),
+        ];
+        assert_ne!(claude.detect_state_from_screen(&prose), Some("asking"));
     }
     #[test]
     fn test_kiro_thinking_detection() {

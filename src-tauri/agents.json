@@ -25,9 +25,9 @@
         },
         "asking": {
           "screen_regex": [
-            "Do you want to proceed\\?",
-            "Do you want to make this edit to",
-            "What should Claude do instead\\?"
+            "^❯ 1\\. Yes",
+            "^Esc to cancel · Tab to amend",
+            "^⏺ Interrupted · What should"
           ]
         },
         "idle": {
