@@ -117,10 +117,14 @@ curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setu
 
 **Windows MSI 或 NSIS `.exe`**（在 [Releases](https://github.com/chatterm/chatterm/releases) 下载）：
 
+两种安装器装到不同位置。MSI 是 per-machine 装在 `Program Files`；NSIS 按 Tauri 默认是 per-user 装在 `%LOCALAPPDATA%`。选你装的那种对应的 PowerShell 命令。
+
 ```powershell
-# 双击 MSI / .exe 安装，默认位置：C:\Program Files\ChatTerm\
-# 然后在 PowerShell 里注册 agent hooks：
-powershell -ExecutionPolicy Bypass -File "C:\Program Files\ChatTerm\resources\setup-hooks.ps1"
+# MSI (ChatTerm_*_x64_en-US.msi) — per-machine
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\ChatTerm\resources\setup-hooks.ps1"
+
+# NSIS (ChatTerm_*_x64-setup.exe) — per-user（默认）
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ChatTerm\resources\setup-hooks.ps1"
 ```
 
 `.ps1` 把 hook 写到 `%APPDATA%\chatterm\hook.py`，并注入 `~/.claude/settings.json`、`~/.kiro/agents/chatterm.json`、`~/.codex/hooks.json`。事件通过 Windows 命名管道 `\\.\pipe\chatterm-hook` 回传给 ChatTerm —— 对应 macOS/Linux 的 FIFO。

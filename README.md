@@ -117,13 +117,17 @@ curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setu
 
 **Windows MSI or NSIS `.exe`** (from [Releases](https://github.com/chatterm/chatterm/releases)):
 
+The two installers drop ChatTerm in different places. MSI is per-machine under `Program Files`; NSIS is per-user under `%LOCALAPPDATA%` by Tauri default. Pick the matching PowerShell command for the one you installed.
+
 ```powershell
-# Double-click the MSI / .exe to install. Default location: C:\Program Files\ChatTerm\
-# Then register agent hooks in PowerShell:
-powershell -ExecutionPolicy Bypass -File "C:\Program Files\ChatTerm\resources\setup-hooks.ps1"
+# MSI (ChatTerm_*_x64_en-US.msi) — per-machine
+powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\ChatTerm\resources\setup-hooks.ps1"
+
+# NSIS (ChatTerm_*_x64-setup.exe) — per-user (default)
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\ChatTerm\resources\setup-hooks.ps1"
 ```
 
-The `.ps1` installer writes the hook at `%APPDATA%\chatterm\hook.py` and wires it into `~/.claude/settings.json`, `~/.kiro/agents/chatterm.json`, and `~/.codex/hooks.json`. The hook relays events to ChatTerm over a Named Pipe (`\\.\pipe\chatterm-hook`), the Windows equivalent of the macOS/Linux FIFO.
+The `.ps1` writes the hook at `%APPDATA%\chatterm\hook.py` and wires it into `~/.claude/settings.json`, `~/.kiro/agents/chatterm.json`, and `~/.codex/hooks.json`. The hook relays events to ChatTerm over a Named Pipe (`\\.\pipe\chatterm-hook`), the Windows equivalent of the macOS/Linux FIFO.
 
 ### Option 3 — Build from source (repo checkout)
 
