@@ -99,6 +99,17 @@ impl PtyManager {
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("CHATTERM_SESSION_ID", req.id);
+        // Pass locale through so `less`, git, etc. render multibyte characters
+        // (CJK names, filenames) instead of escaping bytes as <hex>. GUI apps
+        // launched by launchd inherit a bare environment without LANG.
+        for var in ["LANG", "LC_ALL", "LC_CTYPE"] {
+            if let Ok(v) = std::env::var(var) {
+                cmd.env(var, v);
+            }
+        }
+        if std::env::var("LANG").is_err() && std::env::var("LC_ALL").is_err() {
+            cmd.env("LANG", "en_US.UTF-8");
+        }
 
         let child = pair
             .slave
