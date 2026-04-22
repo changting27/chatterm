@@ -269,9 +269,11 @@ export default function App() {
         if (k === "n") { e.preventDefault(); handleNew(); }
       }
       if (e.key === "Escape") {
-        e.preventDefault(); e.stopPropagation();
-        if (themeOpen) { setThemeOpen(false); return; }
-        if (cmdkOpen) { setCmdkOpen(false); return; }
+        // Only swallow ESC when an overlay is actually open; otherwise let it
+        // bubble to xterm so vim / Kiro CLI / anything else in the terminal
+        // sees it.
+        if (themeOpen) { e.preventDefault(); e.stopPropagation(); setThemeOpen(false); return; }
+        if (cmdkOpen) { e.preventDefault(); e.stopPropagation(); setCmdkOpen(false); return; }
       }
     };
     window.addEventListener("keydown", handler, true); // capture phase
