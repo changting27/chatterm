@@ -337,8 +337,8 @@ export default function App() {
             borderBottom: "1px solid var(--border)", flex: "0 0 auto",
           }}>
             <div style={{
-              width: 26, height: 26, borderRadius: 5, background: active.avatar.color,
-              color: "#1e1e1e", display: "flex", alignItems: "center", justifyContent: "center",
+              width: 26, height: 26, borderRadius: 4, background: active.avatar.color,
+              color: "var(--avatar-text)", display: "flex", alignItems: "center", justifyContent: "center",
               fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 10,
             }}>{active.avatar.mono}</div>
             <div style={{ fontSize: 13, fontWeight: 400, color: "var(--text-strong)" }}>{active.name}</div>

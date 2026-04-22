@@ -21,8 +21,8 @@ body {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background: #555; background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; border: 2px solid transparent; }
 
 @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
 .cursor { display: inline-block; width: 8px; height: 1.1em; background: var(--text); vertical-align: text-bottom; animation: blink 1s step-end infinite; margin-left: 2px; }
@@ -68,7 +68,7 @@ body {
   animation: fade-in 120ms ease-out;
 }
 .cmdk-panel {
-  width: 560px; max-width: 90vw; background: #252526; border: 1px solid #454545;
+  width: 560px; max-width: 90vw; background: var(--panel-bg); border: 1px solid var(--border-strong);
   border-radius: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.6); overflow: hidden;
 }
 

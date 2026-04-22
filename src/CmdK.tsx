@@ -10,7 +10,7 @@ function UnreadBadge({ n, muted }: { n: number; muted?: boolean }) {
 }
 
 const Kbd = ({ children }: { children: string }) => (
-  <span className="mono" style={{ padding: "1px 5px", background: "#2d2d30", borderRadius: 3, fontSize: 10, color: "var(--text-dim)" }}>{children}</span>
+  <span className="mono" style={{ padding: "1px 5px", background: "var(--chip-bg)", borderRadius: 3, fontSize: 10, color: "var(--text-dim)" }}>{children}</span>
 );
 
 interface Props { sessions: Session[]; onClose: () => void; onSelect: (id: string) => void; }
@@ -62,7 +62,7 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
             placeholder="Search sessions, cwd, output…"
             style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--text-strong)", fontSize: 15, fontFamily: "inherit" }}
           />
-          <span className="mono" style={{ fontSize: 10, color: "var(--text-mute)", padding: "2px 6px", background: "#2d2d30", borderRadius: 3 }}>esc</span>
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-mute)", padding: "2px 6px", background: "var(--chip-bg)", borderRadius: 3 }}>esc</span>
         </div>
         <div ref={listRef} style={{ maxHeight: 400, overflowY: "auto" }}>
           {results.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "var(--text-mute)", fontSize: 13 }}>No matches.</div>}
@@ -75,10 +75,10 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
               }}>
               <Avatar av={s.avatar} size={28} status={s.status} group={s.avatar.group} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: "var(--text-strong)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
-                <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.cwd || "—"}</div>
+                <div style={{ fontSize: 13, fontWeight: 400, color: s.unread ? "var(--text-strong)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.cwd || "—"}</div>
               </div>
-              <div style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#2d2d30", color: "var(--text-dim)" }}>{s.kind}</div>
+              <div style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--chip-bg)", color: "var(--text-dim)" }}>{s.kind}</div>
               <UnreadBadge n={s.unread} muted={s.muted} />
             </div>
           ))}

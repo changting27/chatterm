@@ -44,7 +44,7 @@ function LineContent({ line }: { line: OutputLine }) {
   );
   if (line.t === "diff") return (
     <div style={{ ...base, border: "1px solid var(--border-strong)", borderRadius: 4, margin: "4px 0", overflow: "hidden" }}>
-      <div style={{ padding: "4px 10px", background: "#2d2d30", fontSize: 11, color: "var(--text-dim)" }}>{line.text}</div>
+      <div style={{ padding: "4px 10px", background: "var(--chip-bg)", fontSize: 11, color: "var(--text-dim)" }}>{line.text}</div>
       <div style={{ padding: "4px 0" }}>
         {line.diff?.map((d, i) => (
           <div key={i} style={{
@@ -64,7 +64,7 @@ function LineContent({ line }: { line: OutputLine }) {
           <span style={{ color: "var(--text)" }}>{line.label}</span>
           <span style={{ color: "var(--text-dim)" }}>{line.detail}</span>
         </div>
-        <div style={{ height: 4, background: "#2d2d30", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ height: 4, background: "var(--chip-bg)", borderRadius: 2, overflow: "hidden" }}>
           <div style={{ width: `${line.pct}%`, height: "100%", background: done ? "var(--status-running)" : "var(--accent)", transition: "width 400ms ease-out" }} />
         </div>
       </div>
@@ -256,7 +256,7 @@ export default function TerminalPane({ session, onSend, onTogglePin, onToggleMut
               lineHeight: 1.5, padding: "4px 0", minHeight: 22,
             }}
           />
-          <span className="mono" style={{ fontSize: 10, color: "var(--text-mute)", padding: "2px 5px", background: "#2d2d30", borderRadius: 3, marginTop: 4 }}>↵ send</span>
+          <span className="mono" style={{ fontSize: 10, color: "var(--text-mute)", padding: "2px 5px", background: "var(--chip-bg)", borderRadius: 3, marginTop: 4 }}>↵ send</span>
         </div>
       </div>
     </main>

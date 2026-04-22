@@ -1,6 +1,7 @@
 import React from "react";
 import { Session, SessionAvatar, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
 import { Ic } from "./Icons";
+import { getCurrentTheme, subscribeTheme } from "./themes";
 
 // Full path + "$" when it fits the sidebar width; fall back to the last
 // path segment + "$" when too long. Examples:
@@ -21,7 +22,7 @@ export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAv
     <div style={{ position: "relative", width: size, height: size, flex: `0 0 ${size}px` }}>
       <div style={{
         width: size, height: size, borderRadius: 6, background: av.color,
-        color: "#1e1e1e", display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--avatar-text)", display: "flex", alignItems: "center", justifyContent: "center",
         fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: font,
         letterSpacing: -0.5, boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12)",
       }}>{av.mono}</div>
@@ -30,7 +31,7 @@ export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAv
           position: "absolute", right: -3, bottom: -3, width: 14, height: 14, borderRadius: 4,
           background: "var(--av-4)", border: "2px solid var(--sidebar-bg)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 8, color: "#1e1e1e", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace",
+          fontSize: 8, color: "var(--avatar-text)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace",
         }}>3</div>
       )}
       {status && !group && (
@@ -39,10 +40,13 @@ export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAv
           // Three-way priority: asking (user blocked) > running (output activity) > semantic status.
           // Running uses the avatar's own color so the pulse ring inherits it via `currentColor`;
           // asking overrides to red so a blocked agent can't be confused with an active one.
+          // Running pulse is a fixed green (unified across sessions), not the
+          // avatar's own color — the previous per-session hue made the signal
+          // blend into the tile and get missed.
           background: asking
             ? "var(--status-asking)"
-            : status === "running" ? av.color : statusColor(status),
-          color: av.color,
+            : status === "running" ? "var(--status-running)" : statusColor(status),
+          color: "var(--status-running)",
           border: "2px solid var(--sidebar-bg)",
         }} className={asking ? "pulse-asking" : status === "running" ? "pulse-running" : ""} />
       )}
@@ -180,6 +184,11 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch, onPin, onRename, onKill, onResume, filter, setFilter, onSettings }: SidebarProps) {
+  // Track theme polarity so the theme-switch icon in the footer can render
+  // the *opposite* of what's active — moon on light (nudge to dark), sun on
+  // dark (nudge to light). Re-renders whenever a new theme is applied.
+  const [isLight, setIsLight] = React.useState(() => !!getCurrentTheme().isLight);
+  React.useEffect(() => subscribeTheme(t => setIsLight(!!t.isLight)), []);
   const pinned = sessions.filter(s => s.pinned);
   const recent = sessions.filter(s => !s.pinned).sort((a, b) => b.lastActive - a.lastActive);
   const totalUnread = sessions.reduce((a, s) => a + (s.muted ? 0 : s.unread), 0);
@@ -202,12 +211,16 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {/* Corner radius matches the sidebar avatar tiles (~17% of side)
-                so the header logo reads as the same shape family. */}
-            <svg viewBox="0 0 1024 1024" width="22" height="22">
-              <rect width="1024" height="1024" rx="170" ry="170" fill="#0e639c"/>
-              <path d="M 200 260 L 824 260 Q 864 260 864 300 L 864 680 Q 864 720 824 720 L 560 720 L 420 840 L 450 720 L 200 720 Q 160 720 160 680 L 160 300 Q 160 260 200 260 Z" fill="#ffffff"/>
-              <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="#0e639c" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="540" y="570" width="180" height="40" rx="20" fill="#0e639c"/>
+                so the header logo reads as the same shape family. Bubble is
+                wrapped in a scale transform so it doesn't fill the blue box
+                to the edges — breathing room around the chat glyph. */}
+            <svg viewBox="0 0 1024 1024" width="26" height="26">
+              <rect width="1024" height="1024" rx="170" ry="170" fill="var(--logo-bg)"/>
+              <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
+                <path d="M 200 260 L 824 260 Q 864 260 864 300 L 864 680 Q 864 720 824 720 L 560 720 L 420 840 L 450 720 L 200 720 Q 160 720 160 680 L 160 300 Q 160 260 200 260 Z" fill="var(--logo-fg)"/>
+                <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="var(--logo-bg)" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
+                <rect x="540" y="570" width="180" height="40" rx="20" fill="var(--logo-bg)"/>
+              </g>
             </svg>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>ChatTerm</div>
             {totalUnread > 0 && (
@@ -227,12 +240,12 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
         {/* Search button */}
         <button onClick={onSearch} style={{
           width: "100%", display: "flex", alignItems: "center", gap: 8,
-          background: "#3c3c3c", border: "1px solid #3c3c3c",
+          background: "var(--sidebar-active)", border: "1px solid var(--border-strong)",
           padding: "6px 10px", borderRadius: 4, cursor: "pointer", color: "var(--text-dim)", fontSize: 12, textAlign: "left",
         }}>
           <Ic.search />
           <span style={{ flex: 1 }}>Search sessions</span>
-          <span style={{ fontSize: 11, padding: "1px 5px", background: "#2d2d30", borderRadius: 3, fontFamily: "-apple-system, sans-serif" }}>{MOD_KEY}K</span>
+          <span style={{ fontSize: 11, padding: "1px 5px", background: "var(--chip-bg)", borderRadius: 3, fontFamily: "-apple-system, sans-serif" }}>{MOD_KEY}K</span>
         </button>
 
         {/* Filter pills */}
@@ -251,7 +264,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
             }}>
               {f.label}
               {(f.n ?? 0) > 0 && <span style={{
-                background: filter === f.id ? "rgba(255,255,255,0.25)" : "var(--unread)",
+                background: "var(--unread)",
                 color: "white", padding: "0 4px", borderRadius: 6, fontSize: 10,
               }}>{f.n}</span>}
             </button>
@@ -280,15 +293,17 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
         display: "flex", alignItems: "center", gap: 8,
       }}>
         <div style={{
-          width: 24, height: 24, borderRadius: 5, background: "var(--av-6)",
-          color: "#1e1e1e", display: "flex", alignItems: "center", justifyContent: "center",
+          width: 26, height: 26, borderRadius: 4, background: "var(--av-6)",
+          color: "var(--avatar-text)", display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 11,
         }}>Y</div>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 6 }}>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Built for AI coding sessions.</div>
           <div className="mono" style={{ fontSize: 10, color: "var(--text-mute)" }}>v{__APP_VERSION__}</div>
         </div>
-        <Ic.settings style={{ color: "var(--text-dim)", cursor: "pointer" }} onClick={onSettings} />
+        {isLight
+          ? <Ic.moon style={{ color: "var(--text-dim)", cursor: "pointer" }} onClick={onSettings} />
+          : <Ic.sun  style={{ color: "var(--text-dim)", cursor: "pointer" }} onClick={onSettings} />}
       </div>
     </aside>
   );
