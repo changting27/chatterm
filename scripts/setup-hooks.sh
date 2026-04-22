@@ -55,7 +55,28 @@ if not isinstance(msg_raw, str):
 msg = ""
 if msg_raw:
     lines = [l.strip() for l in msg_raw.strip().splitlines() if l.strip()]
-    msg = lines[-1][:120] if lines else ""
+    # Pick the last narrative line, not a markdown artifact. Skip:
+    #   - whole fenced code blocks (```…``` and ~~~…~~~)
+    #   - horizontal rules (--- / === / *** / ___)
+    #   - bare bullet markers (- / * / • / › / >)
+    # If the whole message is code, fall back to the raw last line.
+    def _is_md_artifact(l):
+        if l and set(l) <= set("-_=*"):
+            return True
+        if l in {"-", "*", "•", "—", "›", ">"}:
+            return True
+        return False
+    content = []
+    inside_fence = False
+    for l in lines:
+        if l.startswith("```") or l.startswith("~~~"):
+            inside_fence = not inside_fence
+            continue
+        if inside_fence or _is_md_artifact(l):
+            continue
+        content.append(l)
+    pick = content[-1] if content else (lines[-1] if lines else "")
+    msg = pick[:120]
 
 def emit(kind, body):
     payload = json.dumps({"session_id": SID, "type": kind, "body": body, "cwd": cwd},
