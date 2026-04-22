@@ -89,7 +89,9 @@ jobs:
           files: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
-          generate_release_notes: true
+          # Notes are generated once by macos-release. Re-setting this flag in
+          # parallel jobs causes the body to be appended multiple times — we
+          # shipped v0.2.1 with triple-duplicated notes before noticing.
 
   windows-release:
     runs-on: windows-latest
@@ -124,4 +126,4 @@ jobs:
           files: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
-          generate_release_notes: true
+          # See note on linux-release: do not regenerate — assets only.
