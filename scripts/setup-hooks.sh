@@ -46,7 +46,10 @@ except Exception:
 ev   = d.get("hook_event_name") or d.get("type") or ""
 tool = d.get("tool_name") or ""
 cwd  = d.get("cwd") or ""
+# Kiro uses `assistant_response` for the final reply, Claude uses
+# `last_assistant_message`, Codex notify uses `message` / `output`.
 msg_raw = (d.get("last_assistant_message")
+           or d.get("assistant_response")
            or d.get("message")
            or d.get("output")
            or "")
