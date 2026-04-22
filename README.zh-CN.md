@@ -84,6 +84,8 @@ curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setu
 
 **Debian / Ubuntu** 下拉匹配架构的 `.deb`，跑 `sudo dpkg -i` + `sudo apt-get install -f`（会弹 sudo 密码）。
 
+**Windows 用户**：一行安装脚本是 bash，Windows 跑不了 —— 走下面方式二下载 `.msi` 或 `.exe`，然后在 PowerShell 里跑 `setup-hooks.ps1`。
+
 ### 方式二 —— 手动下载
 
 到 [Releases](https://github.com/chatterm/chatterm/releases) 选对应资产。
@@ -113,6 +115,16 @@ chmod +x ./ChatTerm_*.AppImage
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 ```
 
+**Windows MSI 或 NSIS `.exe`**（在 [Releases](https://github.com/chatterm/chatterm/releases) 下载）：
+
+```powershell
+# 双击 MSI / .exe 安装，默认位置：C:\Program Files\ChatTerm\
+# 然后在 PowerShell 里注册 agent hooks：
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\ChatTerm\resources\setup-hooks.ps1"
+```
+
+`.ps1` 把 hook 写到 `%APPDATA%\chatterm\hook.py`，并注入 `~/.claude/settings.json`、`~/.kiro/agents/chatterm.json`、`~/.codex/hooks.json`。事件通过 Windows 命名管道 `\\.\pipe\chatterm-hook` 回传给 ChatTerm —— 对应 macOS/Linux 的 FIFO。
+
 ### 方式三 —— 从源码构建
 
 ```bash
@@ -125,7 +137,12 @@ npm run tauri build && bash install.sh
 # Debian / Ubuntu
 npm run tauri -- build --bundles deb,appimage && bash scripts/install-linux.sh
 
-# 配 hook（两个平台一样）
+# Windows（同时打 .msi + NSIS .exe，产物在 src-tauri\target\release\bundle\）
+npm run tauri -- build --bundles msi,nsis
+# 安装器跑完后：
+powershell -ExecutionPolicy Bypass -File scripts\setup-hooks.ps1
+
+# 配 hook（macOS / Linux）
 bash scripts/setup-hooks.sh
 ```
 

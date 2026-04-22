@@ -84,6 +84,8 @@ On **macOS** the installer grabs the universal DMG (arm64 + x86_64) and copies `
 
 On **Debian / Ubuntu** the installer grabs the arch-matching `.deb` and runs `sudo dpkg -i` + `sudo apt-get install -f` (it will prompt for the sudo password).
 
+**Windows users**: the one-line script is bash-only — use Option 2 below to grab the `.msi` or `.exe` installer and run `setup-hooks.ps1` from PowerShell.
+
 ### Option 2 — Manual download
 
 Pick an asset from [Releases](https://github.com/chatterm/chatterm/releases) and run the corresponding commands.
@@ -113,6 +115,16 @@ chmod +x ./ChatTerm_*.AppImage
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 ```
 
+**Windows MSI or NSIS `.exe`** (from [Releases](https://github.com/chatterm/chatterm/releases)):
+
+```powershell
+# Double-click the MSI / .exe to install. Default location: C:\Program Files\ChatTerm\
+# Then register agent hooks in PowerShell:
+powershell -ExecutionPolicy Bypass -File "C:\Program Files\ChatTerm\resources\setup-hooks.ps1"
+```
+
+The `.ps1` installer writes the hook at `%APPDATA%\chatterm\hook.py` and wires it into `~/.claude/settings.json`, `~/.kiro/agents/chatterm.json`, and `~/.codex/hooks.json`. The hook relays events to ChatTerm over a Named Pipe (`\\.\pipe\chatterm-hook`), the Windows equivalent of the macOS/Linux FIFO.
+
 ### Option 3 — Build from source (repo checkout)
 
 ```bash
@@ -125,7 +137,12 @@ npm run tauri build && bash install.sh
 # Debian / Ubuntu
 npm run tauri -- build --bundles deb,appimage && bash scripts/install-linux.sh
 
-# Hook setup (same for both)
+# Windows (produces both .msi and NSIS .exe under src-tauri\target\release\bundle\)
+npm run tauri -- build --bundles msi,nsis
+# After the produced installer runs:
+powershell -ExecutionPolicy Bypass -File scripts\setup-hooks.ps1
+
+# Hook setup on macOS / Linux
 bash scripts/setup-hooks.sh
 ```
 
