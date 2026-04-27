@@ -6,7 +6,7 @@ import Sidebar from "./Sidebar";
 import XtermPane from "./XtermPane";
 import CmdK from "./CmdK";
 import { Ic } from "./Icons";
-import { Session, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
+import { Session, SessionKind, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
 import "./App.css";
 
@@ -55,9 +55,9 @@ export default function App() {
   // Persist session metadata whenever sessions change
   const persistSessions = useCallback((ss: Session[]) => {
     const metas: SessionMeta[] = ss.map(s => ({
-      id: s.id, name: s.name, kind: s.kind, agent: (s as any)._agent || null,
-      command: (s as any)._command || null, cwd: s.cwd || null,
-      host: s.host || null, pre_ssh_name: (s as any)._preSSH?.name || null,
+      id: s.id, name: s.name, kind: s.kind, agent: s._agent || null,
+      command: s._command || null, cwd: s.cwd || null,
+      host: s.host || null, pre_ssh_name: s._preSSH?.name || null,
       pinned: s.pinned,
     }));
     invoke("save_sessions", { sessions: metas }).catch(() => {});
@@ -81,11 +81,11 @@ export default function App() {
             // so that if the user SSHs again and exits, the original name restores.
             const wasSsh = m.kind === "ssh" && m.host;
             const shellColor = AVATAR_COLORS[i % AVATAR_COLORS.length];
-            const sess: any = {
+            const sess: Session = {
               id: m.id,
               name: wasSsh ? (m.pre_ssh_name || m.name) : m.name,
               short: wasSsh ? (m.pre_ssh_name || m.name) : m.name,
-              kind: agentInfo ? m.kind : "shell",
+              kind: (agentInfo ? m.kind : "shell") as SessionKind,
               avatar: agentInfo
                 ? { mono: agentInfo.mono, color: agentInfo.color }
                 : { mono: "SH", color: shellColor },
@@ -93,12 +93,11 @@ export default function App() {
               lastActive: Date.now(), lastPreview: "", lines: [],
               cwd: wasSsh ? "~" : (m.cwd || "~"),
               _agent: m.agent, _command: m.command,
+              _preSSH: m.pre_ssh_name
+                ? { name: m.pre_ssh_name, short: m.pre_ssh_name, avatarMono: "SH", avatarColor: shellColor }
+                : null,
             };
-            // Preserve pre-SSH snapshot so future SSH→exit cycles restore correctly
-            if (m.pre_ssh_name) {
-              sess._preSSH = { name: m.pre_ssh_name, short: m.pre_ssh_name, avatarMono: "SH", avatarColor: shellColor };
-            }
-            return sess as Session & { _agent?: string; _command?: string };
+            return sess;
           });
           sessionCounter = maxIdx;
           setSessions(restored);
@@ -165,7 +164,7 @@ export default function App() {
             updates.name = info.name;
             updates.short = info.name;
             updates.avatar = { mono: info.mono, color: info.color };
-            (updates as any)._agent = agent;
+            updates._agent = agent;
           }
         }
 
@@ -174,24 +173,26 @@ export default function App() {
         // backend (e.g. detecting codex while session is still labelled kiro)
         // could silently overwrite command with an unrelated process's args.
         if (command) {
-          const currentAgent = (s as any)._agent;
+          const currentAgent = s._agent;
           if (!currentAgent || !agent || agent === currentAgent) {
-            (updates as any)._command = command;
+            updates._command = command;
           }
         }
 
         // Update cwd — detect SSH sessions from "host:/path" format.
         // The regex requires path to start with / so Windows paths like
-        // "C:\foo" (no leading /) are never mismatched as SSH.
+        // "C:\foo" (no leading /) are never mismatched as SSH. The bare-host
+        // branch requires 2+ chars so "C:/Users/foo" (Git Bash) can't match
+        // with host="C".
         if (metaCwd) {
-          const m = metaCwd.match(/^(\[[^\]]+\]|[^/:]+):(\/.*)$/);
+          const m = metaCwd.match(/^(\[[^\]]+\]|[^/:]{2,}):(\/.*)$/);
           const isRemote = m && m[1] !== "localhost" && s.kind !== "agent";
           if (isRemote) {
             updates.host = m![1];
             updates.cwd = m![2];
             if (s.kind !== "ssh") {
               // Save pre-SSH snapshot so we can restore on exit
-              (updates as any)._preSSH = {
+              updates._preSSH = {
                 name: s.name, short: s.short,
                 avatarColor: s.avatar.color, avatarMono: s.avatar.mono,
               };
@@ -204,9 +205,9 @@ export default function App() {
             updates.cwd = metaCwd;
             // Revert to shell if was SSH but now local
             if (s.kind === "ssh") {
-              const snap = (s as any)._preSSH;
+              const snap = s._preSSH;
               updates.kind = "shell";
-              updates.host = null as any; // clear host (spread will set it)
+              updates.host = undefined;
               updates.name = snap?.name || s.name;
               updates.short = snap?.short || s.short;
               updates.avatar = {
@@ -271,7 +272,7 @@ export default function App() {
 
   const createSession = useCallback(async (name: string, command?: string) => {
     const session = makeSession(name);
-    (session as any)._command = command || null;
+    session._command = command || null;
     setSessions(prev => { const next = [...prev, session]; persistSessions(next); return next; });
     setActiveId(session.id);
     try {
@@ -294,8 +295,8 @@ export default function App() {
   const resumeSession = useCallback(async (id: string) => {
     const s = sessionsRef.current.find(x => x.id === id);
     if (!s) return;
-    const agent = (s as any)._agent;
-    const cmd = (s as any)._command;
+    const agent = s._agent;
+    const cmd = s._command;
     const AGENT_RESUME: Record<string, string> = {
       claude: "claude --resume", kiro: "kiro-cli chat --resume", codex: "codex resume --last",
     };

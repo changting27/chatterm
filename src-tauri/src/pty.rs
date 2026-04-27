@@ -98,6 +98,27 @@ impl PtyManager {
                 }
             }
         }
+        #[cfg(windows)]
+        {
+            // PowerShell 5.x does not update the terminal title on cd, and
+            // does not call SetCurrentDirectory (so process_cwd() is stale).
+            // Inject an OSC 7 prompt hook so CWD tracking works out of the box.
+            if req.command.is_none()
+                && (shell.to_lowercase().contains("powershell")
+                    || shell.to_lowercase().contains("pwsh"))
+            {
+                cmd.args(["-NoExit", "-Command",
+                    // Prepend an OSC 7 emitter to the existing prompt function.
+                    // Emit OSC 7 before every prompt for CWD tracking.
+                    // Uses $([char]27) for PS 5.x compat. The prompt function
+                    // emits OSC 7 then returns the default "PS path> " prompt.
+                    // If $PROFILE redefines prompt after this, OSC 7 is lost —
+                    // but the OSC 0 title fallback (extract_windows_path_from_title)
+                    // still provides CWD tracking for pwsh 7+ which sets title.
+                    r#"function prompt { $p = $PWD.Path -replace '\\','/'; [Console]::Write($([char]27) + "]7;file://" + $env:COMPUTERNAME + "/" + $p + $([char]27) + "\"); return "PS $($PWD.Path)> " }"#,
+                ]);
+            }
+        }
 
         // Set HOME and common env
         let home = home_dir();
@@ -158,6 +179,11 @@ impl PtyManager {
             // fallback probe — it would read the local `ssh` process's cwd
             // and overwrite the correct remote path.
             let mut cwd_via_remote_osc7 = false;
+            // When ANY OSC 7 has been received (local or remote), the shell
+            // is emitting CWD via OSC 7. Use a timestamp so the suppression
+            // self-heals: if the shell stops emitting OSC 7 (e.g. user runs
+            // cmd.exe inside PowerShell), process_cwd() resumes after 10s.
+            let mut last_osc7_time: Option<std::time::Instant> = None;
             let mut vscreen = VScreen::new();
 
             // Best-effort initial push of cwd. A single emit can race with the
@@ -277,6 +303,7 @@ impl PtyManager {
                                 format!("{}:{}", display_host, path)
                             };
                             cwd_via_remote_osc7 = !local;
+                            last_osc7_time = Some(std::time::Instant::now());
                             if Some(&new_cwd) != last_shell_cwd.as_ref() {
                                 last_shell_cwd = Some(new_cwd.clone());
                                 last_cwd_probe = std::time::Instant::now();
@@ -286,6 +313,27 @@ impl PtyManager {
                                     preview: None, notification: None, command: None,
                                     cwd: Some(new_cwd),
                                 });
+                            }
+                        }
+
+                        // Fallback CWD from OSC 0 title — PowerShell sets the
+                        // terminal title to the current directory (e.g. "C:\Users\foo"
+                        // or "PS C:\Users\foo>") but does NOT call SetCurrentDirectory,
+                        // so process_cwd() returns a stale path. Extract a Windows
+                        // path from the title as a fallback when no OSC 7 is active.
+                        if !cwd_via_remote_osc7 && last_agent_cfg.is_none() {
+                            if let Some(ref t) = title {
+                                if let Some(cwd) = extract_windows_path_from_title(t) {
+                                    if Some(&cwd) != last_shell_cwd.as_ref() {
+                                        last_shell_cwd = Some(cwd.clone());
+                                        on_meta(PtyMeta {
+                                            session_id: session_id.clone(),
+                                            title: None, agent: None, state: None,
+                                            preview: None, notification: None,
+                                            command: None, cwd: Some(cwd),
+                                        });
+                                    }
+                                }
                             }
                         }
 
@@ -475,36 +523,22 @@ impl PtyManager {
                             });
                         }
 
-                        // Live shell cwd tracking — only for non-agent sessions
-                        // (agents have their own cwd discovery via detect_agent_cwd).
+                        // Live shell cwd tracking — only for non-agent sessions.
                         // Throttled to once per 500ms worth of output bursts.
-                        // When cwd_via_remote_osc7 is set, we still probe /proc
-                        // but only accept the result if it differs from the ssh
-                        // process's own cwd — this detects when the user has
-                        // exited SSH and the foreground process changed.
+                        // Skip entirely while OSC 7 is the CWD source — either
+                        // from a remote SSH session or a local shell with OSC 7
+                        // prompt (e.g. our injected PowerShell prompt). On Windows
+                        // process_cwd() reads a stale PEB that would overwrite
+                        // the correct OSC 7 path.
                         if last_agent_cfg.is_none()
                             && child_pid > 0
+                            && !cwd_via_remote_osc7
+                            && last_osc7_time.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(10))
                             && last_cwd_probe.elapsed() >= std::time::Duration::from_millis(500)
                         {
                             last_cwd_probe = std::time::Instant::now();
                             if let Some(new_cwd) = process_cwd(&child_pid.to_string()) {
-                                if cwd_via_remote_osc7 {
-                                    // During SSH, /proc reads the local shell's
-                                    // cwd which stays frozen. We still probe so
-                                    // that when SSH exits and the shell resumes,
-                                    // we detect the cwd is now a local path and
-                                    // re-enable local tracking. The first /proc
-                                    // read after SSH exit resets the flag; the
-                                    // next iteration emits the update.
-                                    cwd_via_remote_osc7 = false;
-                                    last_shell_cwd = Some(new_cwd.clone());
-                                    on_meta(PtyMeta {
-                                        session_id: session_id.clone(),
-                                        title: None, agent: None, state: None,
-                                        preview: None, notification: None,
-                                        command: None, cwd: Some(new_cwd),
-                                    });
-                                } else if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                                if Some(&new_cwd) != last_shell_cwd.as_ref() {
                                     last_shell_cwd = Some(new_cwd.clone());
                                     on_meta(PtyMeta {
                                         session_id: session_id.clone(),
@@ -934,13 +968,13 @@ fn cached_nt_query() -> Option<NtQueryFn> {
         // ntdll.dll is always loaded in every Windows process — use
         // GetModuleHandleA (no refcount bump) instead of LoadLibraryA.
         let ntdll = windows::Win32::System::LibraryLoader::GetModuleHandleA(
-            windows::core::PCSTR(b"ntdll.dll\0".as_ptr()),
+            windows::core::PCSTR(c"ntdll.dll".as_ptr() as _),
         ).ok()?;
         let func = windows::Win32::System::LibraryLoader::GetProcAddress(
             ntdll,
-            windows::core::PCSTR(b"NtQueryInformationProcess\0".as_ptr()),
+            windows::core::PCSTR(c"NtQueryInformationProcess".as_ptr() as _),
         )?;
-        Some(std::mem::transmute(func))
+        Some(std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueryFn>(func))
     })
 }
 
@@ -1041,6 +1075,9 @@ unsafe fn read_mem<T: Copy>(
         Some(&mut read),
     )
     .ok()?;
+    if read != std::mem::size_of::<T>() {
+        return None;
+    }
     Some(())
 }
 
@@ -1066,6 +1103,44 @@ fn extract_osc_title(data: &str) -> Option<String> {
             }
         }
         i += 1;
+    }
+    None
+}
+
+/// Extract a Windows directory path from a terminal title string.
+///
+/// PowerShell sets the title to the CWD but does NOT call SetCurrentDirectory,
+/// so process_cwd() returns a stale path. Common title formats:
+///   "C:\Users\foo"
+///   "PS C:\Users\foo>"
+///   "Administrator: C:\Windows\System32"
+///   "Windows PowerShell"  (no path — skip)
+fn extract_windows_path_from_title(title: &str) -> Option<String> {
+    // Match a drive-letter path (X:\...) that appears at the start of the
+    // title or after a known prefix ("PS ", "Administrator: "). This avoids
+    // false-matching titles like "vim C:\temp\file.txt".
+    // UNC paths (\\server\share) are not handled — worth a follow-up.
+    let t = title.trim();
+    // Strip known prefixes to find the path at the "start"
+    let stripped = t
+        .strip_prefix("Administrator: ")
+        .or_else(|| t.strip_prefix("PS "))
+        .unwrap_or(t);
+    let bytes = stripped.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'\\'
+    {
+        // Extract to end of path (stop at '>' or end of string)
+        let path_end = bytes
+            .iter()
+            .position(|&c| c == b'>')
+            .unwrap_or(bytes.len());
+        let path = stripped[..path_end].trim().trim_end_matches('\\');
+        if !path.is_empty() {
+            return Some(path.to_string());
+        }
     }
     None
 }
@@ -1139,7 +1214,7 @@ fn is_local_hostname(host: &str) -> bool {
         }
         String::new()
     });
-    !local.is_empty() && host == local.as_str()
+    !local.is_empty() && host.eq_ignore_ascii_case(local.as_str())
 }
 
 fn whoami() -> String {
@@ -1208,3 +1283,170 @@ fn expand_path(_home: &str, path: &str) -> String {
 
 // Wrapper to implement portable_pty::Child for std::process::Child
 // end of module
+
+#[cfg(test)]
+mod pty_tests {
+    use super::*;
+
+    // --- extract_osc7 ---
+
+    #[test]
+    fn osc7_basic_remote() {
+        let data = "\x1b]7;file://ubuntu22/home/user\x07";
+        let (host, path) = extract_osc7(data).unwrap();
+        assert_eq!(host, "ubuntu22");
+        assert_eq!(path, "/home/user");
+    }
+
+    #[test]
+    fn osc7_localhost() {
+        let data = "\x1b]7;file://localhost/tmp\x07";
+        let (host, path) = extract_osc7(data).unwrap();
+        assert_eq!(host, "localhost");
+        assert_eq!(path, "/tmp");
+    }
+
+    #[test]
+    fn osc7_empty_host() {
+        let data = "\x1b]7;file:///home/user\x07";
+        let (host, path) = extract_osc7(data).unwrap();
+        assert_eq!(host, "");
+        assert_eq!(path, "/home/user");
+    }
+
+    #[test]
+    fn osc7_percent_encoded_path() {
+        let data = "\x1b]7;file://host/home/my%20dir\x07";
+        let (_, path) = extract_osc7(data).unwrap();
+        assert_eq!(path, "/home/my dir");
+    }
+
+    #[test]
+    fn osc7_windows_forward_slash() {
+        // PowerShell OSC 7 injection sends forward slashes
+        let data = "\x1b]7;file://DESKTOP-ABC/C:/Users/foo\x07";
+        let (host, path) = extract_osc7(data).unwrap();
+        assert_eq!(host, "DESKTOP-ABC");
+        assert_eq!(path, "/C:/Users/foo");
+    }
+
+    #[test]
+    fn osc7_rejects_traversal() {
+        let data = "\x1b]7;file://host/home/../../etc/passwd\x07";
+        assert!(extract_osc7(data).is_none());
+    }
+
+    #[test]
+    fn osc7_st_terminator() {
+        // ESC \ (ST) instead of BEL
+        let data = "\x1b]7;file://host/path\x1b\\";
+        let (host, path) = extract_osc7(data).unwrap();
+        assert_eq!(host, "host");
+        assert_eq!(path, "/path");
+    }
+
+    #[test]
+    fn osc7_picks_last_in_burst() {
+        let data = "\x1b]7;file://h/old\x07some output\x1b]7;file://h/new\x07";
+        let (_, path) = extract_osc7(data).unwrap();
+        assert_eq!(path, "/new");
+    }
+
+    // --- extract_osc_title ---
+
+    #[test]
+    fn osc_title_basic() {
+        let data = "\x1b]0;My Title\x07";
+        assert_eq!(extract_osc_title(data).unwrap(), "My Title");
+    }
+
+    #[test]
+    fn osc_title_type2() {
+        let data = "\x1b]2;Window Title\x07";
+        assert_eq!(extract_osc_title(data).unwrap(), "Window Title");
+    }
+
+    #[test]
+    fn osc_title_no_match() {
+        assert!(extract_osc_title("plain text").is_none());
+    }
+
+    #[test]
+    fn osc_title_powershell_path() {
+        let data = "\x1b]0;C:\\Users\\foo\x07";
+        assert_eq!(extract_osc_title(data).unwrap(), "C:\\Users\\foo");
+    }
+
+    // --- extract_windows_path_from_title ---
+
+    #[test]
+    fn win_title_bare_path() {
+        assert_eq!(
+            extract_windows_path_from_title("C:\\Users\\foo"),
+            Some("C:\\Users\\foo".into())
+        );
+    }
+
+    #[test]
+    fn win_title_ps_prefix() {
+        assert_eq!(
+            extract_windows_path_from_title("PS C:\\Users\\foo>"),
+            Some("C:\\Users\\foo".into())
+        );
+    }
+
+    #[test]
+    fn win_title_admin_prefix() {
+        assert_eq!(
+            extract_windows_path_from_title("Administrator: C:\\Windows\\System32"),
+            Some("C:\\Windows\\System32".into())
+        );
+    }
+
+    #[test]
+    fn win_title_trailing_backslash() {
+        assert_eq!(
+            extract_windows_path_from_title("C:\\"),
+            Some("C:".into())
+        );
+    }
+
+    #[test]
+    fn win_title_no_path() {
+        assert!(extract_windows_path_from_title("Windows PowerShell").is_none());
+    }
+
+    #[test]
+    fn win_title_embedded_path_rejected() {
+        // "vim C:\temp\file" should NOT match — path not at start
+        assert!(extract_windows_path_from_title("vim C:\\temp\\file").is_none());
+    }
+
+    // --- percent_decode ---
+
+    #[test]
+    fn percent_decode_space() {
+        assert_eq!(percent_decode("/my%20dir"), "/my dir");
+    }
+
+    #[test]
+    fn percent_decode_utf8() {
+        // 你 = E4 BD A0
+        assert_eq!(percent_decode("/%E4%BD%A0"), "/你");
+    }
+
+    #[test]
+    fn percent_decode_passthrough() {
+        assert_eq!(percent_decode("/plain/path"), "/plain/path");
+    }
+
+    // --- SSH regex (frontend equivalent) ---
+
+    #[test]
+    fn ssh_regex_rejects_drive_letter() {
+        let re = regex::Regex::new(r"^(\[[^\]]+\]|[^/:]{2,}):(/.*$)").unwrap();
+        assert!(!re.is_match("C:/Users/foo"), "single-letter host should not match");
+        assert!(re.is_match("ubuntu22:/home/user"));
+        assert!(re.is_match("[::1]:/tmp"));
+    }
+}

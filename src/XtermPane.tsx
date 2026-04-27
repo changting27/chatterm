@@ -41,6 +41,15 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
       if (k === "k" || k === "n") return false;
     }
     if (document.querySelector(".cmdk-backdrop")) return false;
+    // Windows IME fix: when an IME composition is active, block modifier
+    // keys so the browser's default IME handling commits text correctly.
+    // Note: Ctrl keydown sets e.ctrlKey=true in Chromium, so it's already
+    // excluded by the outer guard — no need to check keyCode 17 here.
+    if (e.isComposing && !e.ctrlKey && !e.metaKey) {
+      const k = e.keyCode;
+      // 16=Shift, 18=Alt, 20=CapsLock
+      if (k === 16 || k === 18 || k === 20) return false;
+    }
     return true;
   });
 
@@ -89,6 +98,49 @@ export default function XtermPane({ sessionId }: Props) {
     // Mount: attach to DOM
     if (!term.element) {
       term.open(container);
+      // Windows IME fix for Sogou and other third-party IMEs.
+      //
+      // Sogou has TWO different behaviors that both lose text:
+      //
+      // 1. Sogou Chinese mode → type English → Shift to commit:
+      //    Sogou bypasses composition entirely. No compositionstart/end.
+      //    It inserts text via a bare "input" event (inputType=insertText,
+      //    isComposing=false). xterm.js may or may not handle this depending
+      //    on internal state (_keyDownSeen). Sogou intercepts keydown events
+      //    so xterm.js's _keyDownSeen is false → text lost.
+      //
+      // 2. Standard composition → compositionend with empty textarea:
+      //    Some IMEs clear textarea.value before compositionend fires.
+      //    xterm.js reads empty string via setTimeout(0) → text lost.
+      //
+      // Fix: listen for both patterns. Use defaultPrevented to detect if
+      // xterm.js already handled the event (avoids double-send).
+      const ta = term.textarea;
+      if (ta && !(ta as any).__imePatched) {
+        // Pattern 1: Sogou non-composition insertText
+        ta.addEventListener("input", ((e: InputEvent) => {
+          if (e.defaultPrevented) return;
+          if (e.inputType !== "insertText" || e.isComposing || !e.data) return;
+          // Sogou inserts multiple characters at once (e.g. "hello") via a
+          // single input event. Normal keystrokes produce single-char input
+          // events that xterm.js already handles via keydown. Only intercept
+          // multi-char inserts to avoid double-sending normal typing.
+          if (e.data.length <= 1) return;
+          invoke("write_session", { id: sessionId, data: e.data });
+          ta.value = "";
+        }) as EventListener, true);
+
+        // Pattern 2: compositionend with empty textarea
+        ta.addEventListener("compositionend", (e: CompositionEvent) => {
+          const text = e.data;
+          if (!text) return;
+          if (!ta.value || ta.value.trim() === "") {
+            invoke("write_session", { id: sessionId, data: text });
+          }
+        }, true);
+
+        (ta as any).__imePatched = true;
+      }
     } else {
       // Re-attach existing element
       while (container.firstChild) container.removeChild(container.firstChild);
