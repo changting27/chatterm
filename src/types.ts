@@ -53,6 +53,10 @@ export interface Session {
   user?: string;
   port?: number;
   pid?: number;
+  // Internal fields — not persisted directly, but used at runtime
+  _agent?: string | null;
+  _command?: string | null;
+  _preSSH?: { name: string; short: string; avatarMono: string; avatarColor: string } | null;
 }
 
 export interface PtyOutput { session_id: string; data: string; }

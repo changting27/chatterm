@@ -206,7 +206,7 @@ fn start_fifo_listener(app: AppHandle) {
     unsafe {
         libc::mkfifo(
             std::ffi::CString::new(pipe_path.to_str().unwrap()).unwrap().as_ptr(),
-            0o622,
+            0o600,
         );
     }
 

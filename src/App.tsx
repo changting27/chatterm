@@ -6,7 +6,7 @@ import Sidebar from "./Sidebar";
 import XtermPane from "./XtermPane";
 import CmdK from "./CmdK";
 import { Ic } from "./Icons";
-import { Session, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
+import { Session, SessionKind, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
 import "./App.css";
 
@@ -20,7 +20,7 @@ const AGENT_INFO: Record<string, { mono: string; color: string; name: string }> 
 
 let sessionCounter = 0;
 
-interface SessionMeta { id: string; name: string; kind: string; agent: string | null; command: string | null; cwd: string | null; pinned: boolean; }
+interface SessionMeta { id: string; name: string; kind: string; agent: string | null; command: string | null; cwd: string | null; host: string | null; pre_ssh_name: string | null; pinned: boolean; }
 
 function makeSession(name: string): Session {
   const idx = sessionCounter++;
@@ -55,8 +55,10 @@ export default function App() {
   // Persist session metadata whenever sessions change
   const persistSessions = useCallback((ss: Session[]) => {
     const metas: SessionMeta[] = ss.map(s => ({
-      id: s.id, name: s.name, kind: s.kind, agent: (s as any)._agent || null,
-      command: (s as any)._command || null, cwd: s.cwd || null, pinned: s.pinned,
+      id: s.id, name: s.name, kind: s.kind, agent: s._agent || null,
+      command: s._command || null, cwd: s.cwd || null,
+      host: s.host || null, pre_ssh_name: s._preSSH?.name || null,
+      pinned: s.pinned,
     }));
     invoke("save_sessions", { sessions: metas }).catch(() => {});
   }, []);
@@ -74,16 +76,28 @@ export default function App() {
             const idx = parseInt(m.id.replace("s", "")) || i;
             if (idx >= maxIdx) maxIdx = idx + 1;
             const agentInfo = m.agent ? AGENT_INFO[m.agent] : null;
-            return {
-              id: m.id, name: m.name, short: m.name, kind: m.kind as any,
+            // SSH sessions are restored as shell — we don't auto-reconnect.
+            // The _preSSH snapshot is reconstructed from persisted pre_ssh_name
+            // so that if the user SSHs again and exits, the original name restores.
+            const wasSsh = m.kind === "ssh" && m.host;
+            const shellColor = AVATAR_COLORS[i % AVATAR_COLORS.length];
+            const sess: Session = {
+              id: m.id,
+              name: wasSsh ? (m.pre_ssh_name || m.name) : m.name,
+              short: wasSsh ? (m.pre_ssh_name || m.name) : m.name,
+              kind: (agentInfo ? m.kind : "shell") as SessionKind,
               avatar: agentInfo
                 ? { mono: agentInfo.mono, color: agentInfo.color }
-                : { mono: "SH", color: AVATAR_COLORS[i % AVATAR_COLORS.length] },
+                : { mono: "SH", color: shellColor },
               status: "idle" as const, unread: 0, pinned: m.pinned, muted: false,
               lastActive: Date.now(), lastPreview: "", lines: [],
-              cwd: m.cwd || "~",
+              cwd: wasSsh ? "~" : (m.cwd || "~"),
               _agent: m.agent, _command: m.command,
-            } as Session & { _agent?: string; _command?: string };
+              _preSSH: m.pre_ssh_name
+                ? { name: m.pre_ssh_name, short: m.pre_ssh_name, avatarMono: "SH", avatarColor: shellColor }
+                : null,
+            };
+            return sess;
           });
           sessionCounter = maxIdx;
           setSessions(restored);
@@ -95,7 +109,8 @@ export default function App() {
           // `session_cwd` — the pty-meta listener may not be registered in time
           // for the backend's opportunistic initial emit.
           for (const m of saved) {
-            const spawnCwd = m.cwd && m.cwd !== "~" ? m.cwd : null;
+            // SSH sessions store remote paths — don't use them as local PTY cwd
+            const spawnCwd = m.cwd && m.cwd !== "~" && !m.host ? m.cwd : null;
             invoke("create_session", { id: m.id, cols: 120, rows: 40, command: null, cwd: spawnCwd })
               .then(() => invoke<string | null>("session_cwd", { id: m.id }))
               .then(cwd => {
@@ -149,7 +164,7 @@ export default function App() {
             updates.name = info.name;
             updates.short = info.name;
             updates.avatar = { mono: info.mono, color: info.color };
-            (updates as any)._agent = agent;
+            updates._agent = agent;
           }
         }
 
@@ -158,15 +173,49 @@ export default function App() {
         // backend (e.g. detecting codex while session is still labelled kiro)
         // could silently overwrite command with an unrelated process's args.
         if (command) {
-          const currentAgent = (s as any)._agent;
+          const currentAgent = s._agent;
           if (!currentAgent || !agent || agent === currentAgent) {
-            (updates as any)._command = command;
+            updates._command = command;
           }
         }
 
-        // Update cwd from hook
+        // Update cwd — detect SSH sessions from "host:/path" format.
+        // The regex requires path to start with / so Windows paths like
+        // "C:\foo" (no leading /) are never mismatched as SSH. The bare-host
+        // branch requires 2+ chars so "C:/Users/foo" (Git Bash) can't match
+        // with host="C".
         if (metaCwd) {
-          updates.cwd = metaCwd;
+          const m = metaCwd.match(/^(\[[^\]]+\]|[^/:]{2,}):(\/.*)$/);
+          const isRemote = m && m[1] !== "localhost" && s.kind !== "agent";
+          if (isRemote) {
+            updates.host = m![1];
+            updates.cwd = m![2];
+            if (s.kind !== "ssh") {
+              // Save pre-SSH snapshot so we can restore on exit
+              updates._preSSH = {
+                name: s.name, short: s.short,
+                avatarColor: s.avatar.color, avatarMono: s.avatar.mono,
+              };
+              updates.kind = "ssh";
+              updates.name = m![1];
+              updates.short = m![1];
+              updates.avatar = { mono: "SS", color: "var(--av-5)" };
+            }
+          } else {
+            updates.cwd = metaCwd;
+            // Revert to shell if was SSH but now local
+            if (s.kind === "ssh") {
+              const snap = s._preSSH;
+              updates.kind = "shell";
+              updates.host = undefined;
+              updates.name = snap?.name || s.name;
+              updates.short = snap?.short || s.short;
+              updates.avatar = {
+                mono: snap?.avatarMono || "SH",
+                color: snap?.avatarColor || AVATAR_COLORS[0],
+              };
+            }
+          }
         }
 
         // Backend state (vscreen regex / hook) drives the semantic flags;
@@ -223,7 +272,7 @@ export default function App() {
 
   const createSession = useCallback(async (name: string, command?: string) => {
     const session = makeSession(name);
-    (session as any)._command = command || null;
+    session._command = command || null;
     setSessions(prev => { const next = [...prev, session]; persistSessions(next); return next; });
     setActiveId(session.id);
     try {
@@ -246,8 +295,8 @@ export default function App() {
   const resumeSession = useCallback(async (id: string) => {
     const s = sessionsRef.current.find(x => x.id === id);
     if (!s) return;
-    const agent = (s as any)._agent;
-    const cmd = (s as any)._command;
+    const agent = s._agent;
+    const cmd = s._command;
     const AGENT_RESUME: Record<string, string> = {
       claude: "claude --resume", kiro: "kiro-cli chat --resume", codex: "codex resume --last",
     };
@@ -348,8 +397,8 @@ export default function App() {
                 fontSize: 11, color: "var(--text-dim)",
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                 maxWidth: 400,
-              }} title={active.cwd}>
-                {active.cwd}
+              }} title={active.host ? `${active.host}:${active.cwd}` : active.cwd}>
+                {active.host ? `${active.host}:${active.cwd}` : active.cwd}
               </span>
             )}
             <div style={{ flex: 1 }} />
