@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main, "feature/**"]
+    branches: [master, main, "feature/**", "fix/**", "ci/**"]
   pull_request:
     branches: [master, main]
 
@@ -211,6 +211,14 @@ jobs:
       - name: Rust clippy
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
+
+      - name: Rust tests (includes Chinese input PTY tests)
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Chinese IME dedup logic test
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\test-chinese-ime.ps1
 
       - name: Build frontend
         run: npx vite build

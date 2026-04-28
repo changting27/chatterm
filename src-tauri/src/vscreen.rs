@@ -549,6 +549,139 @@ mod tests {
         assert!(!is_chrome("收到，当前会话和工作区正常。", Some("codex")));
     }
 
+    // === Chinese input tests ===
+
+    #[test]
+    fn test_chinese_single_char() {
+        let mut vs = VScreen::new();
+        vs.feed("你".as_bytes());
+        assert_eq!(vs.row(0), "你");
+    }
+
+    #[test]
+    fn test_chinese_sentence() {
+        let mut vs = VScreen::new();
+        vs.feed("你好世界".as_bytes());
+        assert_eq!(vs.row(0), "你好世界");
+    }
+
+    #[test]
+    fn test_chinese_multiline() {
+        let mut vs = VScreen::new();
+        vs.feed("第一行\r\n第二行\r\n第三行".as_bytes());
+        assert_eq!(vs.row(0), "第一行");
+        assert_eq!(vs.row(1), "第二行");
+        assert_eq!(vs.row(2), "第三行");
+    }
+
+    #[test]
+    fn test_chinese_mixed_with_ascii() {
+        let mut vs = VScreen::new();
+        vs.feed("Hello你好World世界".as_bytes());
+        assert_eq!(vs.row(0), "Hello你好World世界");
+    }
+
+    #[test]
+    fn test_chinese_with_punctuation() {
+        let mut vs = VScreen::new();
+        vs.feed("你好！这是测试。".as_bytes());
+        assert_eq!(vs.row(0), "你好！这是测试。");
+    }
+
+    #[test]
+    fn test_chinese_no_duplication() {
+        // Simulate what happens when Chinese text is sent once through PTY
+        let mut vs = VScreen::new();
+        vs.feed("你好".as_bytes());
+        assert_eq!(vs.row(0), "你好");
+        // Verify no extra characters
+        let rows = vs.rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], "你好");
+    }
+
+    #[test]
+    fn test_chinese_duplication_detection() {
+        // Simulate the bug: same Chinese text written twice to PTY
+        let mut vs = VScreen::new();
+        vs.feed("你好".as_bytes());
+        vs.feed("你好".as_bytes()); // duplicated write
+        // The screen shows "你好你好" — this is the bug symptom
+        assert_eq!(vs.row(0), "你好你好");
+        // A correct single write should only show "你好"
+        let mut vs_correct = VScreen::new();
+        vs_correct.feed("你好".as_bytes());
+        assert_eq!(vs_correct.row(0), "你好");
+    }
+
+    #[test]
+    fn test_chinese_ime_composition_sequence() {
+        // Simulate IME composition: pinyin "nihao" → 你好
+        // In a real IME, intermediate states are shown then replaced
+        let mut vs = VScreen::new();
+        // Final committed text
+        vs.feed("你好".as_bytes());
+        assert_eq!(vs.row(0), "你好");
+    }
+
+    #[test]
+    fn test_chinese_with_backspace() {
+        let mut vs = VScreen::new();
+        vs.feed("你好啊".as_bytes());
+        // Backspace removes one cursor position
+        vs.feed(b"\x08 \x08");
+        // Note: backspace moves cursor back, space overwrites, backspace again
+        // The CJK char occupies 1 cell in our vscreen (simplified model)
+        let row = vs.row(0);
+        assert!(row.starts_with("你好"));
+    }
+
+    #[test]
+    fn test_chinese_echo_simulation() {
+        // Simulate what a shell echo looks like: user types, shell echoes
+        let mut vs = VScreen::new();
+        // Shell prompt
+        vs.feed(b"$ ");
+        // User input echoed by PTY
+        vs.feed("你好".as_bytes());
+        assert_eq!(vs.row(0), "$ 你好");
+    }
+
+    #[test]
+    fn test_chinese_echo_no_duplication() {
+        // The actual bug scenario: text sent twice appears doubled
+        let mut vs = VScreen::new();
+        vs.feed(b"$ ");
+        vs.feed("你好".as_bytes()); // first write (from xterm.js onData)
+        let correct = vs.row(0).clone();
+        assert_eq!(correct, "$ 你好");
+
+        // Now simulate the bug: second write from compositionend handler
+        let mut vs_bug = VScreen::new();
+        vs_bug.feed(b"$ ");
+        vs_bug.feed("你好".as_bytes()); // first write
+        vs_bug.feed("你好".as_bytes()); // duplicate write (bug)
+        let buggy = vs_bug.row(0);
+        assert_eq!(buggy, "$ 你好你好"); // shows duplication
+        assert_ne!(correct, buggy); // confirms bug produces different output
+    }
+
+    #[test]
+    fn test_chinese_long_text() {
+        let mut vs = VScreen::new();
+        let text = "这是一段比较长的中文文本，用来测试虚拟屏幕对长文本的处理能力";
+        vs.feed(text.as_bytes());
+        assert_eq!(vs.row(0), text);
+    }
+
+    #[test]
+    fn test_chinese_extract_last_message() {
+        let mut vs = VScreen::new();
+        vs.feed("● 你好！有什么可以帮你的吗？\r\n".as_bytes());
+        let msg = vs.extract_last_message(Some("claude"));
+        assert_eq!(msg, Some("你好！有什么可以帮你的吗？".to_string()));
+    }
+
     #[test]
     fn test_extract_last_message_claude() {
         let mut vs = VScreen::new();
